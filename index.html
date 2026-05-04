@@ -46,6 +46,10 @@
                         <option value="color">色別</option>
                     </select>
                     <div class="header-btns-v29">
+                        <div class="volume-control">
+                            <i class="fas fa-volume-up"></i>
+                            <input type="range" id="volume-slider" min="0" max="1" step="0.01" value="0.12">
+                        </div>
                         <button id="backup-btn" class="btn-text" title="書庫データを保存"><i class="fas fa-file-export"></i> 保存</button>
                         <button id="restore-btn" class="btn-text" title="書庫データを復元"><i class="fas fa-file-import"></i> 復元</button>
                         <input type="file" id="restore-input" style="display:none" accept=".json">

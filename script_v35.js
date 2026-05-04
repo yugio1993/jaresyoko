@@ -3,6 +3,7 @@ let books = [];
 let currentBookshelfId = null;
 let currentFontSize = 1.05;
 let isGothic = false;
+let currentBgmVolume = 0.12;
 
 // ==============================
 // BGM管理
@@ -44,7 +45,7 @@ function playNextBgm() {
 function loadAndPlayBgm(src) {
     stopBgm();
     const audio = new Audio(src);
-    audio.volume = 0.12;
+    audio.volume = currentBgmVolume;
     audio.onended = playNextBgm;
     audio.onerror = () => {
         if (bgmPlaylist.length > 1) playNextBgm();
@@ -150,6 +151,7 @@ const ssModal               = document.getElementById('ss-modal');
 const closeSsModal          = document.getElementById('close-ss-modal');
 const ssUrlInput            = document.getElementById('ss-url-input');
 const doSsSyncBtn           = document.getElementById('do-ss-sync-btn');
+const volumeSlider         = document.getElementById('volume-slider');
 
 // ==============================
 // 状態管理
@@ -164,6 +166,13 @@ let pendingImportBooks   = []; // 衝突解決待ちの本
 // 初期化
 // ==============================
 async function init() {
+    // 保存された音量を読み込む
+    const savedVolume = localStorage.getItem('bookshelf_bgm_volume');
+    if (savedVolume !== null) {
+        currentBgmVolume = parseFloat(savedVolume);
+        volumeSlider.value = currentBgmVolume;
+    }
+
     loadBooks();
     
     // スプレッドシートURLが保存されていれば入力欄にセット
@@ -681,6 +690,12 @@ function setupEventListeners() {
 
     nextPageBtn.addEventListener('click', () => flipPage('next'));
     prevPageBtn.addEventListener('click', () => flipPage('prev'));
+
+    volumeSlider.addEventListener('input', (e) => {
+        currentBgmVolume = parseFloat(e.target.value);
+        if (bgmAudio) bgmAudio.volume = currentBgmVolume;
+        localStorage.setItem('bookshelf_bgm_volume', currentBgmVolume);
+    });
 
     fontFamilyBtn.addEventListener('click', () => {
         isGothic = !isGothic;
