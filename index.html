@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>森のじゃれ書庫</title>
-    <link rel="stylesheet" href="style_v27.css">
+    <link rel="stylesheet" href="style.css">
     <link href="https://fonts.googleapis.com/css2?family=Shippori+Mincho:wght@400;700&family=Kiwi+Maru:wght@400;500&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
 </head>
@@ -33,35 +33,75 @@
     <!-- Main Content -->
     <div id="main-content" class="hidden">
         <header>
-            <h1 class="site-title">じゃれ書庫</h1>
-            <div class="header-controls">
-                <div class="search-sort">
-                    <input type="text" id="search-input" placeholder="本を探す..." class="search-bar">
-                    <select id="sort-select" class="sort-select">
+            <div class="header-top">
+                <h1 class="site-title">森のじゃれ書庫</h1>
+                <div class="header-right-area">
+                    <div class="search-box-v29">
+                        <i class="fas fa-search"></i>
+                        <input type="text" id="search-input" placeholder="物語の記憶を辿る...">
+                    </div>
+                    <select id="sort-select" class="sort-select-v29">
                         <option value="newest">新しい順</option>
                         <option value="oldest">古い順</option>
                         <option value="color">色別</option>
                     </select>
-                </div>
-                <div style="display: flex; gap: 10px;">
-                    <button id="clear-bookmarks-btn" class="btn"><i class="fas fa-bookmark"></i> しおりをリセット</button>
-                    <button id="bulk-delete-btn" class="btn"><i class="fas fa-trash-alt"></i> 整理する</button>
-                    <button id="dark-mode-btn" class="btn"><i class="fas fa-moon"></i> ダークモード</button>
-                    <button id="download-btn" class="btn"><i class="fas fa-download"></i> ダウンロード</button>
-                    <button id="add-book-btn" class="btn"><i class="fas fa-plus"></i> 本を追加</button>
+                    <div class="header-btns-v29">
+                        <button id="clear-bookmarks-btn" class="btn-text" title="しおりをリセット"><i class="fas fa-bookmark"></i> リセット</button>
+                        <button id="bulk-delete-btn" class="btn-text" title="整理する"><i class="fas fa-trash-alt"></i> 整理</button>
+                        <button id="dark-mode-btn" class="btn-text" title="テーマ切替"><i class="fas fa-moon"></i> ダーク</button>
+                        <button id="download-btn" class="btn-text" title="ダウンロード"><i class="fas fa-download"></i> DL</button>
+                        <button id="add-book-btn" class="btn-primary-v29"><i class="fas fa-plus"></i> 物語を追加</button>
+                    </div>
                 </div>
             </div>
         </header>
 
-        <!-- Bookshelf -->
-        <div class="bookshelf-wrapper" id="bookshelf-wrapper">
-            <!-- Cute Image Decoration -->
-            <div class="decorations-image"></div>
-            <!-- Shelves will be injected here -->
+        <!-- Bookshelf Tabs (New for v28) -->
+        <div class="bookshelf-tabs-container">
+            <div id="bookshelf-tabs" class="bookshelf-tabs">
+                <!-- Tabs will be generated here -->
+            </div>
+            <button id="add-shelf-btn" class="btn-add-shelf" title="新しい本棚を作る"><i class="fas fa-plus"></i></button>
+        </div>
+
+        <!-- Bookshelf Container with Arrows -->
+        <div class="bookshelf-container-v29">
+            <button id="prev-shelf-btn" class="shelf-nav-btn left" title="前の本棚へ"><i class="fas fa-chevron-left"></i></button>
+            
+            <div id="bookshelf-wrapper" class="bookshelf-wrapper">
+                <div class="decorations-image"></div>
+            </div>
+
+            <button id="next-shelf-btn" class="shelf-nav-btn right" title="次の本棚へ"><i class="fas fa-chevron-right"></i></button>
+
+            <!-- Random Book Button (Book of the Day) -->
+            <div class="random-book-ornament" id="random-book-btn" title="今日の一冊">
+                <div class="dice-box">
+                    <i class="fas fa-dice"></i>
+                    <span>今日の一冊</span>
+                </div>
+            </div>
         </div>
     </div>
 
     <!-- Add/Edit Book Modal -->
+    <!-- Rename Bookshelf Modal (New for v28) -->
+    <div id="rename-shelf-modal" class="modal hidden">
+        <div class="modal-content">
+            <span id="close-rename-shelf-modal" class="close-btn">&times;</span>
+            <h2 id="rename-modal-title">本棚の名前を変える</h2>
+            <form id="rename-shelf-form">
+                <div class="form-group">
+                    <label for="shelf-name-input">新しい名前</label>
+                    <input type="text" id="shelf-name-input" required>
+                </div>
+                <div style="text-align: right; margin-top: 20px;">
+                    <button type="submit" class="btn">変更を保存</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
     <div id="add-book-modal" class="modal hidden">
         <div class="modal-content">
             <span class="close-btn" id="close-add-modal">&times;</span>
@@ -177,24 +217,6 @@
             </div>
         </div>
     </div>
-    <!-- Import Conflict Modal (New for v27) -->
-    <div id="import-conflict-modal" class="modal hidden">
-        <div class="modal-content download-content">
-            <span id="close-import-conflict-modal" class="close-btn">&times;</span>
-            <h2>インポートの確認</h2>
-            <p class="download-hint">以下の本はすでに書庫に存在します。上書き（再インポート）する本を選択してください。</p>
-            <div class="download-controls">
-                <button id="select-all-conflict-btn" class="btn-outline">すべて選択</button>
-                <button id="deselect-all-conflict-btn" class="btn-outline">選択解除</button>
-            </div>
-            <div id="conflict-book-list" class="download-book-list"></div>
-            <div style="margin-top: 20px; text-align: right; display: flex; justify-content: space-between; align-items: center;">
-                <p id="conflict-summary-text" style="font-size: 0.9rem; color: #666;"></p>
-                <button id="do-import-conflict-btn" class="btn"><i class="fas fa-file-import"></i> 選択した本をインポートする</button>
-            </div>
-        </div>
-    </div>
-
     <div id="download-modal" class="modal hidden">
         <div class="modal-content download-content">
             <span class="close-btn" id="close-download-modal">&times;</span>
@@ -208,6 +230,23 @@
             <button id="do-download-btn" class="btn" style="width:100%;margin-top:20px;">
                 <i class="fas fa-file-download"></i> 選択した本をダウンロード
             </button>
+        </div>
+    </div>
+
+    <!-- Import Conflict Modal -->
+    <div id="import-conflict-modal" class="modal hidden">
+        <div class="modal-content download-content">
+            <span id="close-import-conflict-modal" class="close-btn">&times;</span>
+            <h2>同じ名前の物語が既にあります</h2>
+            <p class="download-hint" id="conflict-summary-text">インポートする本を選択してください。</p>
+            <div class="download-controls">
+                <button id="select-all-conflict-btn" class="btn-outline">すべて選択</button>
+                <button id="deselect-all-conflict-btn" class="btn-outline">選択解除</button>
+            </div>
+            <div id="conflict-book-list" class="download-book-list"></div>
+            <div style="margin-top: 20px; text-align: right;">
+                <button id="do-import-conflict-btn" class="btn"><i class="fas fa-file-import"></i> 選択した本をインポートする</button>
+            </div>
         </div>
     </div>
 
@@ -256,6 +295,6 @@
         </div>
     </div>
 
-    <script src="script_v27.js"></script>
+    <script src="script.js"></script>
 </body>
 </html>
