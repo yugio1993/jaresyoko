@@ -1,7 +1,54 @@
-let bookshelves = []; 
-let books = []; 
+/**
+ * 森のじゃれ書庫 - メインアプリケーション
+ * Firebase Firestoreによるリアルタイム同期対応デジタル書庫
+ */
+'use strict';
+
+// ==============================
+// 定数定義
+// ==============================
+const STORAGE_KEYS = {
+    VOLUME: 'bookshelf_bgm_volume',
+    BOOKMARKS: 'bookshelf_bookmarks',
+    CURRENT_SHELF: 'bookshelf_current_id',
+};
+
+const BOOK_DEFAULTS = {
+    FONT_SIZE: 1.05,
+    FONT_SIZE_MIN: 0.7,
+    FONT_SIZE_MAX: 2.0,
+    FONT_SIZE_STEP: 0.1,
+    SPINE_BASE_HEIGHT: 210,
+    SPINE_HEIGHT_VARIANCE: 60,
+    BOOKS_PER_ROW_MIN: 9,
+    BOOKS_PER_ROW_VARIANCE: 3,
+    MIN_SHELF_ROWS: 2,
+    PAGE_GAP: 100,
+};
+
+const IMPORT_COLORS = ['#8B0000', '#2F4F4F', '#191970', '#4B0082', '#556B2F', '#A0522D'];
+const IMPORT_PATTERNS = ['antique', 'leather', 'fabric'];
+const DECOR_TYPES = ['vase', 'frame', 'vase-2', 'frame-2', 'vase-3', 'frame-3'];
+
+const ANIMATION_TIMING = {
+    BOOK_OPEN_DELAY: 50,
+    PAGINATION_DELAY: 1500,
+    FONT_RECALC_DELAY: 100,
+    SHELF_TRANSITION: 400,
+    TOAST_DURATION: 4000,
+    TOAST_FADEOUT: 500,
+};
+
+// ==============================
+// アプリケーション状態
+// ==============================
+/** @type {Array<{id: number, name: string}>} */
+let bookshelves = [];
+/** @type {Array<{id: number, title: string, content: string, color: string, pattern: string, date: number, shelfId: number, lastPage: number, firestoreId?: string}>} */
+let books = [];
+/** @type {number|null} */
 let currentBookshelfId = null;
-let currentFontSize = 1.05;
+let currentFontSize = BOOK_DEFAULTS.FONT_SIZE;
 let isGothic = false;
 let currentBgmVolume = 0.12;
 
@@ -36,6 +83,11 @@ let bgmAudio = null;
 let bgmPlaylist = [];
 let bgmIndex = 0;
 
+/**
+ * 配列をFisher-Yatesアルゴリズムでシャッフルする（元配列は変更しない）
+ * @param {Array} arr - シャッフル対象の配列
+ * @returns {Array} シャッフルされた新しい配列
+ */
 function shuffle(arr) {
     const a = [...arr];
     for (let i = a.length - 1; i > 0; i--) {
@@ -62,7 +114,7 @@ function playNextBgm() {
 function loadAndPlayBgm(src) {
     stopBgm();
     const audio = new Audio(src);
-    audio.volume = 0.12;
+    audio.volume = currentBgmVolume;
     audio.onended = playNextBgm;
     audio.onerror = () => {
         if (bgmPlaylist.length > 1) playNextBgm();
@@ -164,31 +216,37 @@ const closeImportConflictModal = document.getElementById('close-import-conflict-
 const conflictSummaryText   = document.getElementById('conflict-summary-text');
 
 // ==============================
-// 状態管理
+// ページネーション・コンテキスト状態
 // ==============================
 let currentPage = 0;
-let totalPages  = 1;
+let totalPages = 1;
+/** @type {number|null} 現在読んでいる本のID */
 let currentReadingBookId = null;
-let contextMenuTargetId  = null;
-let pendingImportBooks   = []; // 衝突解決待ちの本
+/** @type {number|null} 右クリックメニュー対象の本ID */
+let contextMenuTargetId = null;
+/** @type {Array} インポート衝突解決待ちの本の一時バッファ */
+let pendingImportBooks = [];
 
 // ==============================
 // 初期化
 // ==============================
 async function init() {
-    // 音量設定などはLocalStorageから読み込む（個人設定）
-    const savedVolume = localStorage.getItem('bookshelf_bgm_volume');
+    restoreUserSettings();
+    setupFirestoreListeners();
+    setupEventListeners();
+    setupDragAndDrop();
+}
+
+/**
+ * LocalStorageから個人設定（音量など）を復元する
+ */
+function restoreUserSettings() {
+    const savedVolume = localStorage.getItem(STORAGE_KEYS.VOLUME);
     if (savedVolume !== null) {
         currentBgmVolume = parseFloat(savedVolume);
         const volumeSlider = document.getElementById('volume-slider');
         if (volumeSlider) volumeSlider.value = currentBgmVolume;
     }
-
-    // Firestoreの監視を開始
-    setupFirestoreListeners();
-    
-    setupEventListeners();
-    setupDragAndDrop();
 }
 
 function setupFirestoreListeners() {
@@ -210,8 +268,8 @@ function setupFirestoreListeners() {
     db.collection('books').onSnapshot(snapshot => {
         const firestoreBooks = snapshot.docs.map(doc => ({ ...doc.data(), firestoreId: doc.id }));
         
-        // しおり情報（LocalStorage）とマージ
-        const bookmarks = JSON.parse(localStorage.getItem('bookshelf_bookmarks') || '{}');
+        // しおり情報（LocalStorage）はブラウザ個人のデータとしてマージ
+        const bookmarks = JSON.parse(localStorage.getItem(STORAGE_KEYS.BOOKMARKS) || '{}');
         books = firestoreBooks.map(b => ({
             ...b,
             lastPage: bookmarks[b.id] || 0
@@ -227,10 +285,15 @@ async function createInitialShelf() {
     await db.collection('bookshelves').doc(String(id)).set(newShelf);
 }
 
+/**
+ * しおり（読書進捗）をLocalStorageに保存する
+ * @param {number} bookId - 本のID
+ * @param {number} page - 現在のページ番号
+ */
 function saveBookmark(bookId, page) {
-    const bookmarks = JSON.parse(localStorage.getItem('bookshelf_bookmarks') || '{}');
+    const bookmarks = JSON.parse(localStorage.getItem(STORAGE_KEYS.BOOKMARKS) || '{}');
     bookmarks[bookId] = page;
-    localStorage.setItem('bookshelf_bookmarks', JSON.stringify(bookmarks));
+    localStorage.setItem(STORAGE_KEYS.BOOKMARKS, JSON.stringify(bookmarks));
 }
 
 // ==============================
@@ -246,8 +309,8 @@ function renderBookshelf() {
         const row = document.createElement('div');
         row.className = 'bookshelf-row';
         
-        // 1段あたりの冊数を8〜12冊でランダムに変動させ、自然な見た目にする
-        const booksInThisRow = Math.floor(Math.random() * 3) + 9; 
+        // 1段あたりの冊数をランダムに変動させ、自然な見た目にする
+        const booksInThisRow = Math.floor(Math.random() * BOOK_DEFAULTS.BOOKS_PER_ROW_VARIANCE) + BOOK_DEFAULTS.BOOKS_PER_ROW_MIN;
         const rowBooks = displayBooks.slice(currentBookIndex, currentBookIndex + booksInThisRow);
         
         rowBooks.forEach(book => {
@@ -260,8 +323,7 @@ function renderBookshelf() {
             const decorCount = Math.floor(Math.random() * 2) + 1;
             for (let j = 0; j < decorCount; j++) {
                 const decor = document.createElement('div');
-                const types = ['vase', 'frame', 'vase-2', 'frame-2', 'vase-3', 'frame-3'];
-                const type = types[Math.floor(Math.random() * types.length)];
+                const type = DECOR_TYPES[Math.floor(Math.random() * DECOR_TYPES.length)];
                 decor.className = `cute-item-${type}`;
                 row.appendChild(decor);
             }
@@ -273,8 +335,8 @@ function renderBookshelf() {
         if (displayBooks.length === 0) break; // 最低1段は表示
     }
 
-    // 本が全くない場合でも2段は表示して本棚らしさを保つ
-    if (bookshelfWrapper.querySelectorAll('.bookshelf-row').length < 2) {
+    // 本が全くない場合でも最低段数は表示して本棚らしさを保つ
+    while (bookshelfWrapper.querySelectorAll('.bookshelf-row').length < BOOK_DEFAULTS.MIN_SHELF_ROWS) {
         const row = document.createElement('div');
         row.className = 'bookshelf-row';
         bookshelfWrapper.appendChild(row);
@@ -285,16 +347,14 @@ function getSortedAndFilteredBooks() {
     const q = searchInput.value.toLowerCase();
     const sort = sortSelect.value;
 
-    let filtered;
-    
-    // 検索ワードがある場合は、すべての本棚から探す（全文検索）
+    // 現在の本棚に所属している本のみをフィルタリング
+    let filtered = books.filter(b => b.shelfId === currentBookshelfId);
+
+    // 検索処理
     if (q) {
-        filtered = books.filter(b => 
+        filtered = filtered.filter(b => 
             b.title.toLowerCase().includes(q) || b.content.toLowerCase().includes(q)
         );
-    } else {
-        // 検索ワードがない場合は、現在表示中の本棚のみ
-        filtered = books.filter(b => b.shelfId === currentBookshelfId);
     }
 
     if (sort === 'newest') filtered.sort((a, b) => b.date - a.date);
@@ -304,11 +364,16 @@ function getSortedAndFilteredBooks() {
     return filtered;
 }
 
+/**
+ * 本の背表紙DOM要素を生成する
+ * @param {{id: number, title: string, color: string, pattern: string, lastPage: number}} book
+ * @returns {HTMLElement}
+ */
 function createBookSpine(book) {
     const spine = document.createElement('div');
     spine.className = `book-spine pattern-${book.pattern || 'antique'}`;
     spine.style.backgroundColor = book.color;
-    spine.style.height = `${210 + (book.id % 60)}px`;
+    spine.style.height = `${BOOK_DEFAULTS.SPINE_BASE_HEIGHT + (book.id % BOOK_DEFAULTS.SPINE_HEIGHT_VARIANCE)}px`;
 
     const title = document.createElement('div');
     title.className = 'spine-text';
@@ -380,13 +445,15 @@ function openBook(book) {
     }, 50);
 }
 
+/**
+ * 縦書きページネーションを計算する
+ * @param {number} jumpToPage - 移動先のページ番号
+ */
 function calculatePagination(jumpToPage = 0) {
     const vw = bookViewport.clientWidth;
-    const pageAdvance = vw + 100;
+    const pageAdvance = vw + BOOK_DEFAULTS.PAGE_GAP;
     
-    // 縦書き(vertical-rl)において、冒頭は右端にあります。
-    // style.css で right: 0 に設定しているため、translateX(0) で冒頭が表示されます。
-    readContent.style.transform = "translateX(0)";
+    readContent.style.transform = 'translateX(0)';
     
     requestAnimationFrame(() => {
         requestAnimationFrame(() => {
@@ -398,17 +465,20 @@ function calculatePagination(jumpToPage = 0) {
     });
 }
 
+/** ページネーションのUI状態を更新する */
 function updatePaginationUI() {
     const vw = bookViewport.clientWidth;
-    const pageAdvance = vw + 100;
-    // 縦書き(vertical-rl)かつ right: 0 の場合、
-    // 左側にある「次のページ」を表示するには、要素を右方向（プラス方向）にずらします。
+    const pageAdvance = vw + BOOK_DEFAULTS.PAGE_GAP;
     readContent.style.transform = `translateX(${currentPage * pageAdvance}px)`;
 
     nextPageBtn.disabled = currentPage >= totalPages - 1;
     prevPageBtn.disabled = currentPage === 0;
 }
 
+/**
+ * ページをめくる
+ * @param {'next'|'prev'} dir - 方向
+ */
 function flipPage(dir) {
     if (dir === 'next' && currentPage < totalPages - 1) currentPage++;
     else if (dir === 'prev' && currentPage > 0) currentPage--;
@@ -438,8 +508,7 @@ function renderTabs() {
             } else {
                 currentBookshelfId = shelf.id;
                 renderBookshelf();
-                // 表示中の本棚IDは個人設定として保存しても良いが、共有する必要はない
-                localStorage.setItem('bookshelf_current_id', currentBookshelfId);
+                localStorage.setItem(STORAGE_KEYS.CURRENT_SHELF, currentBookshelfId);
             }
         });
         bookshelfTabs.appendChild(tab);
@@ -473,42 +542,40 @@ function openRandomBook() {
 // ==============================
 // ドラッグ＆ドロップ
 // ==============================
+/**
+ * ドラッグ＆ドロップによるファイルインポートを設定する
+ */
 function setupDragAndDrop() {
     window.addEventListener('dragenter', (e) => {
         e.preventDefault();
         dragOverlay.classList.remove('hidden');
     });
-
     dragOverlay.addEventListener('dragleave', (e) => {
         e.preventDefault();
         dragOverlay.classList.add('hidden');
     });
-
-    window.addEventListener('dragover', (e) => {
-        e.preventDefault();
-    });
-
+    window.addEventListener('dragover', (e) => e.preventDefault());
     window.addEventListener('drop', (e) => {
         e.preventDefault();
         dragOverlay.classList.add('hidden');
-        const files = e.dataTransfer.files;
-        if (files.length > 0) {
-            handleFileUpload(files);
+        if (e.dataTransfer.files.length > 0) {
+            handleFileUpload(e.dataTransfer.files);
         }
     });
 }
 
+/**
+ * ファイルアップロード処理（重複チェック付き）
+ * @param {FileList} files - アップロードされたファイル群
+ */
 async function handleFileUpload(files) {
-    const colors = ["#8B0000", "#2F4F4F", "#191970", "#4B0082", "#556B2F", "#A0522D"];
-    const patterns = ["antique", "leather", "fabric"];
-    
-    let immediateImports = [];
-    let conflictBooks = [];
+    const immediateImports = [];
+    const conflictBooks = [];
 
     for (const file of Array.from(files)) {
         if (!file.name.endsWith('.txt')) continue;
 
-        const title = file.name.replace(/\.[^/.]+$/, "");
+        const title = file.name.replace(/\.[^/.]+$/, '');
         const content = await new Promise((resolve) => {
             const reader = new FileReader();
             reader.onload = (e) => resolve(e.target.result);
@@ -519,11 +586,11 @@ async function handleFileUpload(files) {
             id: Date.now() + Math.random(),
             title,
             content,
-            color: colors[Math.floor(Math.random() * colors.length)],
-            pattern: patterns[Math.floor(Math.random() * patterns.length)],
+            color: IMPORT_COLORS[Math.floor(Math.random() * IMPORT_COLORS.length)],
+            pattern: IMPORT_PATTERNS[Math.floor(Math.random() * IMPORT_PATTERNS.length)],
             lastPage: 0,
             date: Date.now(),
-            shelfId: currentBookshelfId
+            shelfId: currentBookshelfId,
         };
 
         if (books.some(b => b.title === title)) {
@@ -571,6 +638,11 @@ function showImportConflictModal() {
 // ==============================
 // トースト通知
 // ==============================
+/**
+ * トースト通知を表示する
+ * @param {string} message - 表示メッセージ
+ * @param {'default'|'forest'} type - トーストの種類
+ */
 function showToast(message, type = 'default') {
     const toast = document.createElement('div');
     toast.className = `toast ${type === 'forest' ? 'toast-forest' : ''}`;
@@ -580,8 +652,8 @@ function showToast(message, type = 'default') {
 
     setTimeout(() => {
         toast.classList.add('fade-out');
-        setTimeout(() => toast.remove(), 500);
-    }, 4000);
+        setTimeout(() => toast.remove(), ANIMATION_TIMING.TOAST_FADEOUT);
+    }, ANIMATION_TIMING.TOAST_DURATION);
 }
 
 // ==============================
@@ -705,10 +777,10 @@ function setupEventListeners() {
     });
 
     fontSizeDownBtn.addEventListener('click', () => {
-        if (currentFontSize > 0.7) { currentFontSize -= 0.1; updateFontSize(); }
+        if (currentFontSize > BOOK_DEFAULTS.FONT_SIZE_MIN) { currentFontSize -= BOOK_DEFAULTS.FONT_SIZE_STEP; updateFontSize(); }
     });
     fontSizeUpBtn.addEventListener('click', () => {
-        if (currentFontSize < 2.0) { currentFontSize += 0.1; updateFontSize(); }
+        if (currentFontSize < BOOK_DEFAULTS.FONT_SIZE_MAX) { currentFontSize += BOOK_DEFAULTS.FONT_SIZE_STEP; updateFontSize(); }
     });
 
     downloadBtn.addEventListener('click', () => {
@@ -763,7 +835,7 @@ function setupEventListeners() {
 
     clearBookmarksBtn.addEventListener('click', () => {
         if (confirm('すべてのしおりをリセットしますか？（あなたのブラウザのみ）')) {
-            localStorage.removeItem('bookshelf_bookmarks');
+            localStorage.removeItem(STORAGE_KEYS.BOOKMARKS);
             books.forEach(b => b.lastPage = 0);
             renderBookshelf();
             showToast('すべてのしおりをリセットしました。');
@@ -879,13 +951,16 @@ function setupEventListeners() {
 function updateFontSize() {
     currentFontSize = Math.round(currentFontSize * 10) / 10;
     readContent.style.fontSize = `${currentFontSize}rem`;
-    setTimeout(() => calculatePagination(currentPage), 100);
+    setTimeout(() => calculatePagination(currentPage), ANIMATION_TIMING.FONT_RECALC_DELAY);
 }
 
+/**
+ * 本棚を左右に切り替える（アニメーション付き）
+ * @param {-1|1} dir - 方向（-1: 前, 1: 次）
+ */
 function cycleShelf(dir) {
     if (bookshelves.length <= 1) return;
     
-    // アニメーション開始
     bookshelfWrapper.classList.add('shelf-transition-out');
     
     setTimeout(() => {
@@ -895,17 +970,16 @@ function cycleShelf(dir) {
         if (nextIdx >= bookshelves.length) nextIdx = 0;
         
         currentBookshelfId = bookshelves[nextIdx].id;
-        localStorage.setItem('bookshelf_current_id', currentBookshelfId);
+        localStorage.setItem(STORAGE_KEYS.CURRENT_SHELF, currentBookshelfId);
         renderBookshelf();
         
-        // 切り替え後のアニメーション
         bookshelfWrapper.classList.remove('shelf-transition-out');
         bookshelfWrapper.classList.add('shelf-transition-in');
         
         setTimeout(() => {
             bookshelfWrapper.classList.remove('shelf-transition-in');
-        }, 400);
-    }, 400);
+        }, ANIMATION_TIMING.SHELF_TRANSITION);
+    }, ANIMATION_TIMING.SHELF_TRANSITION);
 }
 
 window.addEventListener('DOMContentLoaded', init);
